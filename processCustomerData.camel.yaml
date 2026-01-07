@@ -21,14 +21,29 @@
               
               ## Step 2: Velocity
               - to:
-                  uri: "velocity:classpath:WebmethodsFlowServices_processCustomerData.vm"
+                  uri: velocity
                   parameters:
-                    contentCache: "true"
-              
+                    allowContextMapAll: true
+                    resourceUri: file:WebmethodsFlowServices_processCustomerData.vm
+              - log: ------------> ${body}
+              - unmarshal:
+                  json:
+                    library: Jackson
+              - marshal:
+                  json:
+                    library: Jackson
               ## Step 3: Kafka
               - to:
-                  uri: "kafka:crm_customer_profile_v1?brokers={{kafka.bootstrap.servers}}"
-            
+                  uri: kafka
+                  parameters:
+                    brokers: pkc-619z3.us-east1.gcp.confluent.cloud:9092
+                    requestRequiredAcks: all
+                    saslJaasConfig: org.apache.kafka.common.security.plain.PlainLoginModule required
+                      username='CNWJHHUTOJZOCO7B'
+                      password='cflt4Ql5yM08e9LZlf2gdD5mpPjemyZV5O7DUf5WnvYuuj/sMMYQVv+TjioVlrtg';
+                    saslMechanism: PLAIN
+                    securityProtocol: SASL_SSL
+                    topic: crm_customer_profile_v1
             doCatch:
               - exception:
                   - "java.lang.Exception"
