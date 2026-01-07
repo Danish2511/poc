@@ -1,0 +1,155 @@
+##
+## Velocity Template: WebmethodsFlowServices_processCustomerData.vm
+## Purpose: Transform CustomerInput to CustomerOutput
+## Migration: webMethods processCustomerData flow service to Apache Camel
+## Source: FlowServiceAnalysis/WebmethodsFlowServices_processCustomerData_Analysis.md
+##
+
+## IMPORTANT: Inline required macros from VM_Files/common-macros.vm at the top
+## DO NOT use #parse("common-macros.vm") - it fails in VM tester runtime
+
+## Safe Field Mapping with Zero/Null Handling
+#macro(safeField $value $defaultValue)
+#if($value == 0 || $value == "0")0#elseif($value)$value#else$defaultValue#end
+#end
+
+## Safe Number Handling (handles zero explicitly)
+#macro(safeNumber $numValue)
+#if($numValue == 0)0#elseif($numValue)$numValue#else0#end
+#end
+
+## String to Uppercase (replaces pub.string:toUpper)
+#macro(toUpper $strValue)
+#if($strValue)$strValue.toUpperCase()#else#end
+#end
+
+## String Replace (replaces pub.string:replace)
+#macro(replaceSpace $strValue)
+#if($strValue)$strValue.replace(" ", "_")#else#end
+#end
+
+## Extract input data
+#set($input = $body)
+#set($customer = $input.customer)
+#set($metadata = $input.metadata)
+
+## Validate input
+#if(!$customer)
+{
+  "error": "Invalid Input",
+  "message": "Missing customer in request body",
+  "timestamp": "${date:now:yyyy-MM-dd'T'HH:mm:ss}"
+}
+#stop
+#end
+
+## Extract nested objects
+#set($customerName = $customer.name)
+#set($customerContact = $customer.contact)
+#set($customerPreferences = $customer.preferences)
+#set($customerLoyaltyProgram = $customer.loyaltyProgram)
+#set($customerCustomAttributes = $customer.customAttributes)
+#set($metadataInitiatedBy = $metadata.initiatedBy)
+#set($metadataAudit = $metadata.audit)
+
+{
+  "event_name": "CustomerProfileUpdated",
+  "event_id": "#safeField($input.eventId '')",
+  "record_updated_at": "#safeField($input.timestamp '')",
+  "schema_ver": "#safeField($input.schemaVersion '')",
+  "profile": {
+    "id": "#safeField($customer.customerId '')",
+    "customer_full_name": "#safeField($customerName.fullName '')",
+    "status_code": "#toUpper($customer.status)",
+    "customer_type": "#toUpper($customer.type)",
+    "email_address": "#safeField($customerContact.primaryEmail '')",
+    "mobile_number": "#safeField($customerContact.primaryPhone '')",
+    "preferred_channel": "#toUpper($customerContact.preferredContactMethod)",
+    "loyalty_tier": "#toUpper($customerLoyaltyProgram.tier)",
+    "loyalty_points": #safeNumber($customerLoyaltyProgram.pointsBalance),
+    "segment_tags": [
+#set($marketingSegments = $customerPreferences.marketingSegments)
+#if($marketingSegments && $marketingSegments.size() > 0)
+#foreach($segment in $marketingSegments)
+      "#toUpper($segment)"#if($foreach.hasNext),#end
+#end
+#end
+    ],
+    "account_links": [
+#set($relatedAccounts = $customer.relatedAccounts)
+#if($relatedAccounts && $relatedAccounts.size() > 0)
+#foreach($account in $relatedAccounts)
+      {
+        "linked_account_id": "#safeField($account.accountId '')",
+        "link_type": "#replaceSpace(#toUpper($account.relationshipType))",
+        "linked_account_name": "#safeField($account.accountName '')"
+      }#if($foreach.hasNext),#end
+#end
+#end
+    ],
+    "locations": [
+#set($addresses = $customer.addresses)
+#if($addresses && $addresses.size() > 0)
+#foreach($address in $addresses)
+      {
+#if($address.isPrimary == true)
+        "location_kind": "PRIMARY_BILLING",
+#else
+        "location_kind": "SECONDARY_SHIPPING",
+#end
+        "line1": "#safeField($address.street '')",
+        "city_name": "#safeField($address.city '')",
+        "province": "#safeField($address.state '')",
+        "postal_code": "#safeField($address.postalCode '')",
+        "country_name": "#safeField($address.country '')"
+      }#if($foreach.hasNext),#end
+#end
+#end
+    ],
+    "communication_opt_in": {
+      "email": #if($customerPreferences.communication.emailSubscribed == true)true#elsefalse#end,
+      "sms": #if($customerPreferences.communication.smsSubscribed == true)true#elsefalse#end,
+      "newsletter": #if($customerPreferences.communication.newsletterSubscribed == true)true#elsefalse#end,
+      "dnd": #if($customerPreferences.communication.doNotDisturb == true)true#elsefalse#end
+    },
+    "attributes": {
+      "language_pref": "#safeField($customerPreferences.language '')",
+      "currency_pref": "#safeField($customerPreferences.currency '')",
+      "favorite_category": "#safeField($customerCustomAttributes.preferredProductCategory '')",
+      "ref_code": "#safeField($customerCustomAttributes.referralCode '')",
+      "rating": #safeNumber($customerCustomAttributes.customerRating)
+    }
+  },
+  "system_metadata": {
+    "source": "#safeField($metadata.sourceSystem '')",
+    "targets": [
+#if($metadata.targetSystems && $metadata.targetSystems.size() > 0)
+#foreach($target in $metadata.targetSystems)
+      "#safeField($target '')"#if($foreach.hasNext),#end
+#end
+#end
+    ],
+    "correlation_key": "#safeField($metadata.correlationId '')",
+    "modified_by": "#safeField($metadataInitiatedBy.userId '')",
+    "modified_role": "#safeField($metadataInitiatedBy.role '')",
+    "modified_dept": "#safeField($metadataInitiatedBy.department '')",
+    "change_log": [
+#set($changeTrace = $metadataAudit.changeTrace)
+#if($changeTrace && $changeTrace.size() > 0)
+#foreach($change in $changeTrace)
+      {
+#if($change.field == "contact.primaryPhone")
+        "property": "primaryPhone",
+#elseif($change.field == "addresses[1].city")
+        "property": "shippingCity",
+#end
+        "previous": "#safeField($change.oldValue '')",
+        "current": "#safeField($change.newValue '')"
+      }#if($foreach.hasNext),#end
+#end
+#end
+    ],
+    "change_summary": "#safeField($metadataAudit.changeReason '')"
+  }
+}
+

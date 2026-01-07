@@ -1,0 +1,57 @@
+# camel-k: property=file:../../properties/configs.properties
+
+# Camel Route Design: rest -> unmarshal -> velocity -> kafka
+
+- route:
+    id: processCustomerData-rest
+    from:
+      uri: rest:post:/api/v1/processCustomerData
+      parameters:
+        consumes: application/json
+        produces: application/json
+      steps:
+        - doTry:
+            steps:
+              ## rest -> unmarshal -> velocity -> kafka
+              
+              ## Step 1: Unmarshal
+              - unmarshal:
+                  json:
+                    library: Jackson
+              
+              ## Step 2: Velocity
+              - to:
+                  uri: "velocity:classpath:WebmethodsFlowServices_processCustomerData.vm"
+                  parameters:
+                    contentCache: "true"
+              
+              ## Step 3: Kafka
+              - to:
+                  uri: "kafka:crm_customer_profile_v1?brokers={{kafka.bootstrap.servers}}"
+            
+            doCatch:
+              - exception:
+                  - "java.lang.Exception"
+                steps:
+                  - log:
+                      message: "[processCustomerData] Error: ${exception.message}"
+                      loggingLevel: "ERROR"
+                  
+                  - setHeader:
+                      name: "Content-Type"
+                      constant: "application/json"
+                  
+                  - setHeader:
+                      name: "CamelHttpResponseCode"
+                      constant: "500"
+                  
+                  - setBody:
+                      simple: |
+                        {
+                          "error": "Processing Error",
+                          "message": "${exception.message}",
+                          "timestamp": "${date:now:yyyy-MM-dd'T'HH:mm:ss}"
+                        }
+                  
+                  - marshal:
+                      json: {}
